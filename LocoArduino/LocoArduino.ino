@@ -16,6 +16,22 @@ char mode;
 boolean auto_stop;
 int desired_speed;
 
+int state;
+
+void state_activate (int state){
+  if (state == 1 ){
+    brakes = 0;
+    power = 1;
+    cap = 1;
+    rheo = 1;
+  }
+  if (state == 2 ){
+    brakes = 1;
+    power = 1;
+    cap = 1;
+    rheo = 1;
+  }
+}
 void setup() {
   // put your setup code here, to run once:
 
@@ -23,5 +39,15 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-
+ if (deadman == 0){
+  //Neutral & Parking brake on (STATE 1)
+  state_activate (1);
+ }
+ else {
+  if (drive == N) {
+    //Neutral (Shutdown low) (STATE 2)
+    state_activate (2);
+  }
+  else (
+ }
 }
