@@ -73,7 +73,8 @@ void common_function(){
   communications();
   while((millis()-deadman_time) > timeout){ // deadman timeout
     // Neutral, parking brake on
-    communications(); 
+    
+    communications(); // will continue in shutdown mode until deadman is pressed again
   }
 }
 
