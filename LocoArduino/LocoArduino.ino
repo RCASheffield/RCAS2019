@@ -22,6 +22,7 @@ boolean exit_flag;
 
 const int timeout = 100;
 unsigned long deadman_time;
+const int data_refresh_time = 250;
 
 void setup() {
   // put your setup code here, to run once:
@@ -136,5 +137,8 @@ void communications(){
       desired_speed = Serial.parseInt();
     }
     // Send data
-    
+    if((millis()-send_time) > data_refresh_length){
+
+      send_time = millis();
+    }
 }
