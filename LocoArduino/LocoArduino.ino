@@ -7,7 +7,7 @@ boolean power;  // POWER ISOLATE relay
 boolean cap;   // CAP ISOLATE relay
 boolean rheo; // RHEO relay
 boolean sd;  // Driver shutdown pins
-int pwm;   // Output to MOSFET drivers
+int pwm = 128;   // Output to MOSFET drivers
 
 // Recieved Variables
 boolean deadman;
@@ -17,12 +17,18 @@ char mode;
 boolean auto_stop;
 int desired_speed;
 
-int state;
+// Sent Variables
+int actual_speed = 0;
+int battery_voltage = 48;
+int cap_voltage = 0;
+
 boolean exit_flag;
 
 const int timeout = 100;
 unsigned long deadman_time;
 const int data_refresh_time = 250;
+
+
 
 void setup() {
   // put your setup code here, to run once:
@@ -72,7 +78,7 @@ void loop() {
 
 void common_function(){
   communications();
-  while((millis()-deadman_time) > timeout){ // deadman timeout
+  while((millis()-deadman_time) > timeout || deadman == 0){ // deadman timeout
     // Neutral, parking brake on
     
     communications(); // will continue in shutdown mode until deadman is pressed again
@@ -86,6 +92,9 @@ void communications(){
     if (incoming_byte=='X'){
       deadman = 1;
       deadman_time = millis();
+    }
+    if (incoming_byte == 'x'){
+      deadman = 0;
     }
     if(incoming_byte=='h'){
       digitalWrite(horn_pin,0);
@@ -138,7 +147,14 @@ void communications(){
     }
     // Send data
     if((millis()-send_time) > data_refresh_length){
-
+      Serial.write('s');
+      Serial.write(actual_speed);
+      Serial.write('v');
+      Serial.write(battery_voltage);
+      Serial.write('c');
+      Serial.write(cap_voltage);
+      Serial.write('p');
+      Serial.write(pwm);
       send_time = millis();
     }
 }
