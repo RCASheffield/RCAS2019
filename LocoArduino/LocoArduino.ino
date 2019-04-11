@@ -1,5 +1,36 @@
-// Output pin definitions
+
+#include <LiquidCrystal.h>
+
+// Output Pin Definitions
+const int sd_pin = 2;
+const int pwm_pin = 3;
 const int horn_pin = 4;
+const int brakes_pin = 5;
+const int power_pin = 6;
+const int cap_pin = 7;
+const int rheo_pin = 8;
+const int spare_pin_1 = 9;
+const int spare_pin_2 = 10;
+
+// Analog Input Pin Definitions
+const int battery_voltage_pin = 2;
+const int cap_voltage_pin = 3;
+const int current_sensor_pin = 4;
+const int temp_sensor_pin = 5;
+
+// LCD Display Setup
+//LiquidCrystal lcd(50, 51, 49, 48, 47, 46);    // FOR ACTUAL LCD
+LiquidCrystal lcd(12, 11, 10, 9, 8, 7);  // FOR TESTING
+
+// Digital Input Pin Definitions
+const int autostop_pin = 13;  // IR sensor
+const int encoder_1a = 25;    
+const int encoder_1b = 26;
+const int encoder_1i = 27;    // Index
+const int encoder_2a = 28;
+const int encoder_2b = 29;
+const int encoder_2i = 30;    // Index
+
 
 // Output Variables
 boolean brakes; // BRAKES relay
@@ -10,7 +41,7 @@ boolean sd;  // Driver shutdown pins
 int pwm = 128;   // Output to MOSFET drivers
 
 // Recieved Variables
-boolean deadman;
+boolean deadman = 1;
 char drive;
 boolean regen;
 char mode;
@@ -22,27 +53,39 @@ int actual_speed = 0;
 int battery_voltage = 48;
 int cap_voltage = 0;
 
+// Timing Variables
 boolean exit_flag;
-
-const int timeout = 100;
-unsigned long deadman_time;
-const int data_refresh_time = 250;
-
-
+boolean first_loop;
+const unsigned long timeout = 10000;
+unsigned long deadman_time = 0;
+const unsigned long data_refresh_time = 250;
+unsigned long send_time = 0;
 
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   common_function();
+  lcd.begin(16,2);
+  lcd.clear();
+  lcd.setCursor(0,1);
+  lcd.print("Initialising...");
 }
 
 void loop() {
   exit_flag=0;
-  while(exit_flag==0&&drive=='N'){
-  // Neutral, shutdown pin low
+  first_loop = 0;
+  lcd.clear();
+  lcd.setCursor(0,1);
+  while(exit_flag==0&&drive=='N'){  // Neutral, shutdown pin low
+    if(first_loop == 0){  // Code here executes once
+      lcd.print("Neutral");
+      first_loop = 1;
+    }                     // Code here repeats
   common_function();
   
   }
+  
+  
   while(exit_flag==0&&drive!='N'){
     while(exit_flag==0&&regen==0){
       while(exit_flag==0&&auto_stop==0){
@@ -80,13 +123,16 @@ void common_function(){
   communications();
   while((millis()-deadman_time) > timeout || deadman == 0){ // deadman timeout
     // Neutral, parking brake on
-    
+    lcd.clear();
+    lcd.setCursor(0,1);
+    lcd.print("Emergency");
     communications(); // will continue in shutdown mode until deadman is pressed again
   }
 }
 
 void communications(){
   // Received data
+  char incoming_byte;
   while (Serial.available()>0){
     incoming_byte = Serial.read();
     if (incoming_byte=='X'){
@@ -145,8 +191,10 @@ void communications(){
     if(incoming_byte=='s'){
       desired_speed = Serial.parseInt();
     }
-    // Send data
-    if((millis()-send_time) > data_refresh_length){
+    
+  }
+  // Send data
+    if((millis()-send_time) > data_refresh_time){
       Serial.write('s');
       Serial.write(actual_speed);
       Serial.write('v');
