@@ -34,31 +34,36 @@ LiquidCrystal lcd(12, 11, 10, 9, 8, 7);  // FOR TESTING
 #define encoder_2b  29
 #define encoder_2i  30   // Index
 
-// Output Variables
-boolean brakes; // BRAKES relay
-boolean power;  // POWER ISOLATE relay
-boolean cap;   // CAP ISOLATE relay
-boolean rheo; // RHEO relay
-boolean sd;  // Driver shutdown pins
-int pwm = 128;   // Output to MOSFET drivers
-
 // Recieved Variables
 int desired_speed = 0;
 char state = 'a';
 char horn = 'h';
 
+// State and PWM variables
 char current_state = 'a';
+int pwm = 128;   // Output to MOSFET drivers
+long integral_error = 0;
+int setpoint = 0;
 
+// Interrupt Variables
 volatile boolean autostop_mode = 0;
 volatile long pulse_count = 0;
-
-long loop_start_pulse_count;
-long loop_pulse_count;
 
 // Sent Variables
 int actual_speed = 0;
 int battery_voltage = 48;
 int cap_voltage = 0;
+
+// Temperature
+const int temp_threshold = 150;   // temp ~0.4883 * reading from pin. Hence threshold of 150 is approx 75 degrees C.
+int temperature = 50;
+
+// Other Measured Values
+int current_reading = 0;
+
+// Loop Variables
+long loop_start_pulse_count;
+long loop_pulse_count;
 
 // Timing Variables
 unsigned long loop_start_time = 0;
@@ -68,14 +73,12 @@ const unsigned long timeout_period = 100;  // sets timeout for loss of communica
 unsigned long time_last_comms_sent = 0;
 const unsigned long send_period = 500;     // sets data send interval
 
-// Temperature Threshold
-const int temp_threshold = 150;   // temp ~0.4883 * reading from pin. Hence threshold of 150 is approx 75 degrees C.
-
 void setup() 
 {
-  Serial.begin(9600);
-  TCCR3B = (TCCR3B & B11111000) | B00000001;    // 32KHz PWM frequency
-  attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);
+  pin_definitions();
+  Serial.begin(9600);   // Must match controller arduino
+  TCCR3B = (TCCR3B & B11111000) | B00000001;    // 31.25 KHz PWM frequency
+  attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);    // Setup interrupt for encoder 1
   // attachInterrupt(digitalPinToInterrupt(encoder_2a_interrupt), read_encoder2, RISING);   // Use if encoder 1 is faulty
   lcd.begin(16,2);
 }
@@ -88,7 +91,7 @@ void loop()
     actual_speed = 2.20893*loop_pulse_count;    // constant = 0.2650872/(G*T) where G is the gear ratio between the encoder and the wheel and T is the loop period. Outputs speed such that 150 = 15km/h
      
     receive_comms();    // check for new commands
-    if(millis() - time_last_comms_received > timeout_period || analogRead(temp_sensor_pin) > temp_threshold)   // shutdown loco if communication is lost or in case of overheating
+    if(millis() - time_last_comms_received > timeout_period || temperature > temp_threshold)   // shutdown loco if communication is lost or in case of overheating
     {
       state = 'a';
     }
@@ -100,10 +103,12 @@ void loop()
     }
 
     set_horn();
+    
 
-    if (state == 'c' || (state == 'd' && autostop_mode == 0) || state == 'e' || state == 'g')
+    if (state == 'c' || (state == 'd' && autostop_mode == 0) || state == 'e' || state == 'g')   // pwm set by control system to regulate speed
     {
-      // pwm set by control system to regulate speed
+      pwm = set_pwm(desired_speed,actual_speed);     
+      analogWrite(pwm_pin,pwm);
     }
     else if(state == 'd' && autostop_mode == 1)
     {
@@ -113,6 +118,8 @@ void loop()
     {
       // Who knows how regen works...
       // try to keep current flowing into the capacitor for as long as possible
+      // current_reading = analogRead(current_sensor_pin);
+      // cap_voltage = analogRead(cap_voltage_pin);
     }
     
     lcd.setCursor(0,1);
@@ -121,6 +128,9 @@ void loop()
 
     if(millis() - time_last_comms_sent > send_period)   // sends communications at fixed period
     {
+      battery_voltage = analogRead(battery_voltage_pin);
+      cap_voltage = analogRead(cap_voltage_pin);
+      temperature = analogRead(temp_sensor_pin);
       send_comms();
     }
     
@@ -148,6 +158,8 @@ void state_change()   // Runs once on state change
   lcd.print(state);
   detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop when not in autostop state
   autostop_mode = 0;    // Resets allowing autostop to be entered again
+  integral_error = 0;
+  setpoint = 0;
   switch(state)
   {
     case 'a': // Neutral, parking brake on
@@ -222,6 +234,16 @@ void state_change()   // Runs once on state change
       digitalWrite(rheo_pin,HIGH);   // Rheo resistors disconnected from capacitor
       digitalWrite(spare_pin_1,LOW);    // Resistors connected to ground - does nothing
     break;
+    
+    default:    // In case of error
+      digitalWrite(sd_pin,LOW);   // MOSFETS off
+      digitalWrite(brakes_pin,LOW);   // Brakes on
+      digitalWrite(power_pin,LOW);    // Batteries disconnected
+      digitalWrite(cap_pin,LOW);    // Capacitor isolated from motors
+      digitalWrite(rheo_pin,LOW);   // Rheo resistors connected to capacitor
+      digitalWrite(spare_pin_1,LOW);    // Resistors connected to ground to discharge capacitor
+      pwm = 128;
+    break;
   }
 }
 
@@ -281,4 +303,44 @@ void autostop()
   pulse_count = 0;
   autostop_mode = 1;
   detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again
+}
+
+int set_pwm(int requested,int actual)
+{
+  const float kp = 0.8;
+  const float ki = 0.002;
+  const float alpha = 0.04;    // Averaging filter constant
+  int control_signal = 0;
+  int error = 0;
+  setpoint = alpha*requested + (1-alpha)*setpoint;    // averaging filter to prevent large step changes in input
+  error = setpoint - actual;
+  control_signal = 128 + kp*error + ki*integral_error;
+  if(control_signal > 255)
+  {
+    integral_error = (requested - 128 - kp*error)/ki;   // anti-windup measure
+    return 255;
+  }
+  else if(control_signal < 0)
+  {
+    integral_error = (requested - 128 - kp*error)/ki;   // anti-windup measure
+    return 0;
+  }
+  else
+  {
+    integral_error = integral_error + error;
+    return control_signal;
+  }
+}
+
+void pin_definitions()
+{
+  pinMode(2,OUTPUT);
+  pinMode(3,OUTPUT);
+  pinMode(4,OUTPUT);
+  pinMode(5,OUTPUT);
+  pinMode(6,OUTPUT);
+  pinMode(7,OUTPUT);
+  pinMode(8,OUTPUT);
+  pinMode(9,OUTPUT);
+  pinMode(10,OUTPUT);
 }
