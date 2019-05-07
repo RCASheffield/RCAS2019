@@ -308,7 +308,7 @@ void autostop()
 int set_pwm(int requested,int actual)
 {
   const float kp = 0.8;
-  const float ki = 0.002;
+  const float ki = 0.02;
   const float alpha = 0.04;    // Averaging filter constant
   int control_signal = 0;
   int error = 0;
