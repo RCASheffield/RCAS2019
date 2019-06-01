@@ -194,7 +194,7 @@ void state_change()   // Runs once on state change
       {
         digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
       }
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       pwm = 128;
       break;
 
@@ -204,7 +204,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, LOW);   // Batteries disconnected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       pwm = 128;
       break;
 
@@ -214,7 +214,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, HIGH);   // Batteries connected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       break;
 
     case 'd':   // Standard, forward/backward drive, speed set by controller, but enters auto stop when signal recieved
@@ -223,7 +223,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, HIGH);   // Batteries connected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop, RISING);
       break;
 
