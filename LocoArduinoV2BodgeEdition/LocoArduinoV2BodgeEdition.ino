@@ -9,9 +9,9 @@
 #define brakes_pin 10
 #define power_pin 6
 #define cap_pin 8
-#define rheo_pin  5
-#define spare_pin_1 7
-
+#define rheo_pin  7
+#define spare_pin_1 5
+//#define speed_output 
 // Analog Input Pin Definitions
 #define battery_voltage_pin 2
 #define cap_voltage_pin 3
@@ -44,6 +44,9 @@ char current_state = 'a';
 int pwm = 128;   // Output to MOSFET drivers
 long integral_error = 0;
 int setpoint = 0;
+int speed_input = 0;
+long time_speed_change=0;
+int speed_change_period=1000;
 
 // Interrupt Variables
 volatile boolean autostop_mode = 0;
@@ -75,12 +78,6 @@ const unsigned long send_period = 500;     // sets data send interval
 
 void setup()
 
-
-
-
-
-
-
 {
   pin_definitions();
   digitalWrite(spare_pin_2, HIGH); //Safety relay
@@ -89,8 +86,6 @@ void setup()
   //attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);    // Setup interrupt for encoder 1
   // attachInterrupt(digitalPinToInterrupt(encoder_2a_interrupt), read_encoder2, RISING);   // Use if encoder 1 is faulty
   lcd.begin(16, 2);
-
-
 
 }
 
@@ -119,7 +114,36 @@ void loop()
 
   if (state == 'c' || (state == 'd' && autostop_mode == 0) || state == 'e' || state == 'g')   // pwm set by control system to regulate speed
   {
-    analogWrite(pwm_pin, desired_speed + 127);
+    if (desired_speed > speed_input && (millis() - time_speed_change) > (speed_change_period))
+    {
+      speed_input=speed_input+1;
+      time_speed_change=millis();
+      Serial.print(millis() - time_speed_change);
+      
+    }
+    else if (desired_speed < speed_input && (millis() - time_speed_change) > (speed_change_period))
+    {
+      speed_input=speed_input-1;
+      time_speed_change=millis();
+      Serial.print(millis() - time_speed_change);
+    }
+    else
+    {
+      
+    }
+   
+   
+    analogWrite(pwm_pin,  abs(speed_input));
+    if (speed_input >= 0)
+    {
+      digitalWrite(spare_pin_1, HIGH);
+      //digitalWrite(rheo_pin, HIGH);         
+    }
+    else
+    {
+      digitalWrite(spare_pin_1, LOW);
+      //digitalWrite(rheo_pin, LOW);
+    }
     //pwm = set_pwm(desired_speed,actual_speed);
     //analogWrite(pwm_pin,pwm);
   }
@@ -141,7 +165,7 @@ void loop()
   lcd.setCursor(0, 1);
   lcd.print(state);
   Serial.print(state);
-  Serial.print(desired_speed);
+  Serial.print(speed_input);
   Serial.println();
 
 
@@ -186,6 +210,7 @@ void state_change()   // Runs once on state change
       digitalWrite(brakes_pin, LOW);  // Brakes on
       digitalWrite(power_pin, LOW);   // Batteries disconnected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
+      speed_input = 0;
       if (current_state = 'f')
       {
         digitalWrite(rheo_pin, HIGH);  // Prevents capacitor discharging if deadman is released when the previous state is regen-collect.
@@ -215,6 +240,10 @@ void state_change()   // Runs once on state change
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
       //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+
+
+      
+      
       break;
 
     case 'd':   // Standard, forward/backward drive, speed set by controller, but enters auto stop when signal recieved
@@ -233,7 +262,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, HIGH);   // Batteries connected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       break;
 
     case 'f':   // Automatic regen collection, battery disconnected, slows train down to stop within required distance
@@ -251,7 +280,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, LOW);   // Batteries diconnected
       digitalWrite(cap_pin, HIGH);   // Capacitor connected directly to motors
       digitalWrite(rheo_pin, HIGH);  // Rheo resistors disconnected from capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground - does nothing
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground - does nothing
       break;
 
     default:    // In case of error
@@ -260,7 +289,7 @@ void state_change()   // Runs once on state change
       digitalWrite(power_pin, LOW);   // Batteries disconnected
       digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
+      //digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
       pwm = 128;
       break;
   }
