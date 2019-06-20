@@ -2,15 +2,22 @@
 #include <LiquidCrystal.h>
 
 // Output Pin Definitions
-#define sd_pin  2
+#define safety_pin 10
+#define brakes_pin 9
+#define HB_1A 6
+#define HB_1B 8
+#define HB_2A 5
+#define HB_2B 7
 #define pwm_pin 3
+
 #define horn_pin  4
-#define spare_pin_2 9
-#define brakes_pin 10
-#define power_pin 6
-#define cap_pin 8
-#define rheo_pin  5
-#define spare_pin_1 7
+
+//#define sd_pin  2
+//#define spare_pin_2 9
+//#define power_pin 6
+//#define cap_pin 8
+//#define rheo_pin  5
+//#define spare_pin_1 7
 
 // Analog Input Pin Definitions
 #define battery_voltage_pin 2
