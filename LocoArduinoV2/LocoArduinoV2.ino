@@ -4,30 +4,20 @@
 // Output Pin Definitions
 #define safety_pin 10
 #define brakes_pin 9
-#define HB_1A 6
-#define HB_1B 8
-#define HB_2A 5
-#define HB_2B 7
+#define 1A 6
+#define 1B 8
+#define 2A 5
+#define 2B 7
 #define pwm_pin 3
 
 #define horn_pin  4
 
-//#define sd_pin  2
-//#define spare_pin_2 9
-//#define power_pin 6
-//#define cap_pin 8
-//#define rheo_pin  5
-//#define spare_pin_1 7
-
 // Analog Input Pin Definitions
 #define battery_voltage_pin 2
-#define cap_voltage_pin 3
-#define current_sensor_pin  4
-#define temp_sensor_pin 5
+// #define temp_sensor_pin 5
 
 // LCD Display Setup
-LiquidCrystal lcd(50, 51, 49, 48, 47, 46);    // FOR ACTUAL LCD
-//LiquidCrystal lcd(12, 11, 10, 9, 8, 7);  // FOR TESTING
+LiquidCrystal lcd(50, 51, 49, 48, 47, 46);
 
 // Digital Input Pin Definitions
 #define autostop_pin  13  // IR sensor    // THIS PIN NEEDS CONNECTING TO/SWAPPING FOR PIN 19 FOR INTERRUPT TO WORK
@@ -81,24 +71,14 @@ unsigned long time_last_comms_sent = 0;
 const unsigned long send_period = 500;     // sets data send interval
 
 void setup()
-
-
-
-
-
-
-
 {
   pin_definitions();
-  digitalWrite(spare_pin_2, HIGH); //Safety relay
+  digitalWrite(safety_pin, HIGH); //Safety relay
   Serial.begin(9600);   // Must match controller arduino
-  TCCR3B = (TCCR3B & B11111000) | B00000001;    // 31.25 KHz PWM frequency
+  //TCCR3B = (TCCR3B & B11111000) | B00000001;    // 31.25 KHz PWM frequency
   //attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);    // Setup interrupt for encoder 1
   // attachInterrupt(digitalPinToInterrupt(encoder_2a_interrupt), read_encoder2, RISING);   // Use if encoder 1 is faulty
   lcd.begin(16, 2);
-
-
-
 }
 
 void loop()
@@ -134,14 +114,7 @@ void loop()
   {
     // set pwm to achieve correct position
   }
-  else if (state == 'f')
-  {
-    // Who knows how regen works...
-    // try to keep current flowing into the capacitor for as long as possible
-    // current_reading = analogRead(current_sensor_pin);
-    // cap_voltage = analogRead(cap_voltage_pin);
-  }
-
+  
   lcd.setCursor(0, 0);
   lcd.print(desired_speed);
   lcd.print("     ");
@@ -189,10 +162,9 @@ void state_change()   // Runs once on state change
   switch (state)
   {
     case 'a': // Neutral, parking brake on
-      digitalWrite(sd_pin, LOW);  // MOSFETS off
       digitalWrite(brakes_pin, LOW);  // Brakes on
       digitalWrite(power_pin, LOW);   // Batteries disconnected
-      digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
+      //digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
       if (current_state = 'f')
       {
         digitalWrite(rheo_pin, HIGH);  // Prevents capacitor discharging if deadman is released when the previous state is regen-collect.
@@ -234,33 +206,6 @@ void state_change()   // Runs once on state change
       attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop, RISING);
       break;
 
-    case 'e':   // Forward/backward drive, speed set by controller, but capacitor disconnected and emptied
-      digitalWrite(sd_pin, HIGH);  // MOSFETS set by PWM
-      digitalWrite(brakes_pin, HIGH);  // Brakes off
-      digitalWrite(power_pin, HIGH);   // Batteries connected
-      digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
-      digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground to discharge capacitor
-      break;
-
-    case 'f':   // Automatic regen collection, battery disconnected, slows train down to stop within required distance
-      digitalWrite(sd_pin, HIGH);  // MOSFETS set by PWM
-      digitalWrite(brakes_pin, HIGH);  // Brakes off
-      digitalWrite(power_pin, LOW);   // Batteries disconnected
-      digitalWrite(cap_pin, LOW);   // Capacitor isolated from motors
-      digitalWrite(rheo_pin, LOW);  // Rheo resistors connected to capacitor
-      //digitalWrite(spare_pin_1,HIGH);    // Resistors connected to motors to charge capacitor
-      break;
-
-    case 'g':   // Forward/backward drive, speed set by controller, batteries disconnected, power from capacitor
-      digitalWrite(sd_pin, HIGH);  // MOSFETS set by PWM
-      digitalWrite(brakes_pin, HIGH);  // Brakes off
-      digitalWrite(power_pin, LOW);   // Batteries diconnected
-      digitalWrite(cap_pin, HIGH);   // Capacitor connected directly to motors
-      digitalWrite(rheo_pin, HIGH);  // Rheo resistors disconnected from capacitor
-      digitalWrite(spare_pin_1, LOW);   // Resistors connected to ground - does nothing
-      break;
-
     default:    // In case of error
       digitalWrite(sd_pin, LOW);  // MOSFETS off
       digitalWrite(brakes_pin, LOW);  // Brakes on
@@ -291,8 +236,6 @@ void send_comms()
   Serial.write(actual_speed);
   Serial.write('v');
   Serial.write(battery_voltage);
-  Serial.write('c');
-  Serial.write(cap_voltage);
   Serial.write('p');
   Serial.write(pwm);
   time_last_comms_sent = millis();
@@ -309,20 +252,6 @@ void read_encoder1() // increments/decrements pulse count (position) depending o
     pulse_count--;
   }
 }
-
-/* Uncomment if encoder 1 does not work
-  void read_encoder2() // increments/decrements pulse count (position) depending on direction of rotation
-  {
-  if(digitalRead(encoder_2b)==HIGH)
-  {
-    pulse_count++;
-  }
-  else
-  {
-    pulse_count--;
-  }
-  }
-*/
 
 void autostop()
 {
