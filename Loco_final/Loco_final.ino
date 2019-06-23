@@ -38,23 +38,24 @@ char prev_autostop = 'a';
 float desired_speed_kmph = 0;
 
 // Interrupt Variables
-volatile boolean autostop_mode = 0;
+volatile boolean autostop_flag = 0;
 volatile long pulse_count = 0;
 
 // Output to motor controller computation variables
-byte pwm = 0;   
+byte pwm = 0; 
+unsigned int control_output = 0;
+byte error = 0;  
 long integral_error = 0;
-byte setpoint = 0;
+const float kp = 0.8;
+const float ki = 0.02;
 
 // Sent Variables
 byte actual_speed = 0;
 int battery_voltage = 48;
 
-// Loop Variables
+// Loop and Timing Variables
 long loop_start_pulse_count;
 long loop_pulse_count;
-
-// Timing Variables
 unsigned long loop_start_time = 0;
 const byte loop_period = 10;   // sets loop period and hence sample rate
 unsigned long time_last_comms_received = 0;
@@ -63,6 +64,9 @@ unsigned long time_last_comms_sent = 0;
 const int send_period = 500;     // sets data send interval
 unsigned long lcd_update_time = 0;
 const int lcd_update_period = 1000;
+unsigned long bridge_low_time = 0;
+const int bridge_dead_time = 200;
+boolean bridge_switch_flag = 0;
 
 void setup()
 {
@@ -98,15 +102,13 @@ void loop()
 
   change_outputs();
   
+  set_pwm();
+  
   if (millis() - time_last_comms_sent > send_period)  // sends communications at fixed period
   {
     send_comms();
     time_last_comms_sent = millis();
   }
-  
-  prev_drive = drive;
-  prev_horn = horn;
-  prev_autostop = autostop;
   
   while (millis() - loop_start_time < loop_period)  // fixes loop length
   {
@@ -164,32 +166,78 @@ void change_outputs()
       case 'S':
       lcd.setCursor(0,1);
       lcd.write("Stopped");
+      digitalWrite(brakes_pin,LOW);
+      digitalWrite(H1A,LOW);
+      digitalWrite(H1B,LOW);
+      digitalWrite(H2A,LOW);
+      digitalWrite(H2B,LOW);
       break;
       
       case 'N':
       lcd.setCursor(0,1);
       lcd.write("Neutral");
+      digitalWrite(brakes_pin,HIGH);
+      digitalWrite(H1A,LOW);
+      digitalWrite(H1B,LOW);
+      digitalWrite(H2A,LOW);
+      digitalWrite(H2B,LOW);
       break;
 
       case 'F':
       lcd.setCursor(0,1);
       lcd.write("Forward");
+      digitalWrite(brakes_pin,HIGH);
+      digitalWrite(H1A,LOW);
+      digitalWrite(H1B,LOW);
+      digitalWrite(H2A,LOW);
+      digitalWrite(H2B,LOW);
+      bridge_low_time = millis();
+      bridge_switch_flag = 1;
       break;
 
       case 'R':
       lcd.setCursor(0,1);
       lcd.write("Reverse");
+      digitalWrite(brakes_pin,HIGH);
+      digitalWrite(H1A,LOW);
+      digitalWrite(H1B,LOW);
+      digitalWrite(H2A,LOW);
+      digitalWrite(H2B,LOW);
+      bridge_low_time = millis();
+      bridge_switch_flag = 1;
       break;
 
       default:
       lcd.setCursor(0,1);
       lcd.write("Error  ");
+      digitalWrite(brakes_pin,LOW);
       break;
+    }
+  }
+
+  if(bridge_switch_flag == 1)
+  {
+    if(millis() - bridge_low_time > bridge_dead_time)
+    {
+      bridge_switch_flag = 0;
+      switch (drive)
+      {
+        case 'F':
+        digitalWrite(H1A,HIGH);
+        digitalWrite(H2B,HIGH);
+        break;
+
+        case 'R':
+        digitalWrite(H1B,HIGH);
+        digitalWrite(H2A,HIGH);
+        break;
+      }
     }
   }
 
   if (autostop != prev_autostop)
   {
+    autostop_flag = 0;
     switch(autostop)
     {
       case 'a':
@@ -201,7 +249,7 @@ void change_outputs()
       case 'A':
       lcd.setCursor(1,0);
       lcd.write("A");
-      attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop, RISING);
+      attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop_ISR, RISING);
       break;
 
       default:
@@ -211,6 +259,9 @@ void change_outputs()
       break;
     }
   }
+  prev_drive = drive;
+  prev_horn = horn;
+  prev_autostop = autostop;
 }
 
 void send_comms()
@@ -232,37 +283,34 @@ void read_encoder1() // increments/decrements pulse count (position) depending o
   }
 }
 
-void autostop()
+void autostop_ISR()
 {
   pulse_count = 0;
-  autostop_mode = 1;
+  autostop_flag = 1;
   detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again
 }
 
-int set_pwm(int requested, int actual)
+void set_pwm()
 {
-  const float kp = 0.8;
-  const float ki = 0.02;
-  const float alpha = 0.04;    // Averaging filter constant
-  int control_signal = 0;
-  int error = 0;
-  setpoint = alpha * requested + (1 - alpha) * setpoint; // averaging filter to prevent large step changes in input
-  error = setpoint - actual;
-  control_signal = 128 + kp * error + ki * integral_error;
-  if (control_signal > 255)
+  error = desired_speed - actual_speed;
+  control_output = kp * error + ki * integral_error;
+  if (control_output > 255)
   {
-    integral_error = (requested - 128 - kp * error) / ki; // anti-windup measure
-    return 255;
+    integral_error = (255 - kp * error) / ki; // anti-windup measure
+    pwm = 255;
+    return;
   }
-  else if (control_signal < 0)
+  else if (control_output < 0)
   {
-    integral_error = (requested - 128 - kp * error) / ki; // anti-windup measure
-    return 0;
+    integral_error = (0 - kp * error) / ki; // anti-windup measure
+    pwm = 0;
+    return;
   }
   else
   {
     integral_error = integral_error + error;
-    return control_signal;
+    pwm = control_output;
+    return;
   }
 }
 
