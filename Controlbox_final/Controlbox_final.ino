@@ -6,8 +6,10 @@
 #define horn_switch 14
 #define auto_switch 16 
 #define speed_pot 3   // Defines pin for speed setting pot
+#define speed_pot 0   // Defines pin for speed setting pot
 
 LiquidCrystal lcd(11, 10, 5, 4, 3, 2);
+LiquidCrystal lcd(7, 6, 5, 4, 3, 2);
 
 // Loop variables
 unsigned long loop_start_time = 0;
@@ -162,6 +164,7 @@ void lcd_setup()
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print("Speed:      kmph");
+  lcd.print("Speed:         kmph");
   lcd.setCursor(0,1);
   lcd.print("Setpoint:      kmph");
   lcd.setCursor(0,2);
@@ -174,17 +177,22 @@ void lcd_update()
 {
   actual_speed_kmph = actual_speed / 10.0;
   lcd.setCursor(8,0);
+  lcd.setCursor(10,0);
   lcd.print("    ");
   lcd.setCursor(8,0);
+  lcd.setCursor(10,0);
   lcd.print(actual_speed_kmph,1);
   
   desired_speed_kmph = desired_speed / 10.0;
   lcd.setCursor(11,1);
+  lcd.setCursor(10,1);
   lcd.print("    ");
   lcd.setCursor(11,1);
+  lcd.setCursor(10,1);
   lcd.print(desired_speed_kmph,1);
   
   lcd.setCursor(7,2);
+  lcd.setCursor(6,2);
   switch (drive)
   {
     case 'S':
@@ -205,6 +213,7 @@ void lcd_update()
   }
 
   lcd.setCursor(7,3);
+  lcd.setCursor(6,3);
   switch (autostop)
   {
     case 'a':
@@ -218,7 +227,9 @@ void lcd_update()
 
   pwm_percent = map(pwm,0,255,0,100);
   lcd.setCursor(16,3);
+  lcd.setCursor(15,3);
   lcd.print("   ");
   lcd.setCursor(16,3);
+  lcd.setCursor(15,3);
   lcd.print(pwm_percent);
 }
