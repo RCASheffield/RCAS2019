@@ -1,6 +1,5 @@
 #include <LiquidCrystal.h>
 
-
 #define deadman_switch 12
 #define drive_switch_1 A4
 #define drive_switch_2 A3
@@ -19,8 +18,8 @@ unsigned long lcd_update_time = 0;
 const int lcd_update_period = 500;
  
 // Sent variables
-int desired_speed = 0;    // speed pot value
-int setpoint = 0;    // ramped speed setpoint
+byte desired_speed = 0;    // speed pot value
+byte setpoint = 0;    // ramped speed setpoint
 char horn = 'h';    // h - off, H - on
 char drive = 'S';    // S - stop, N - neutral, F - forward, R - reverse
 char autostop = 'a';    // a - off, A - on
@@ -35,7 +34,7 @@ void setup()
 {
   Serial.begin(115200);
   pin_definitions();
-  lcd_setup();
+  //lcd_setup();
 }
 
 void loop() 
@@ -56,10 +55,20 @@ void loop()
 
   if(millis() - lcd_update_time > lcd_update_period)
   {
-    lcd_update();
-    lcd_update_time = millis();
+    //lcd_update();
+    //lcd_update_time = millis();
   }
-       
+
+  if(digitalRead(deadman_switch) == HIGH)
+  {
+    lcd.home();
+    lcd.print("Off");
+  }
+  if(digitalRead(deadman_switch) == LOW)
+  {
+    lcd.home();
+    lcd.print("On ");
+  }
   while(millis() - loop_start_time < loop_period) // Fixes loop time loop period in ms
   {
   }
@@ -75,15 +84,15 @@ void send_comms()
   Serial.print(autostop); 
 }
 
-int ramp_input()   // Ramps input to avoid large step inputs to the control system on the loco
+byte ramp_input()   // Ramps input to avoid large step inputs to the control system on the loco
 {
   desired_speed = map(analogRead(speed_pot),0,1023,0,150);    // maps analog value from pot to corresponding speed setpoint (150 = 15kmph)
-  if (setpoint < desired_speed)
+  if (desired_speed < setpoint)
   {
     setpoint++;
     return setpoint;
   }
-  else if (setpoint > desired_speed)
+  else if (desired_speed > setpoint)
   {
     setpoint--;
     return setpoint;
@@ -107,11 +116,11 @@ void switch_states()    // Reads switches and sets output variables
   
   if(digitalRead(auto_switch) == LOW)
   {
-    autostop = 'a';
+    autostop = 'A';
   }
   else
   {
-    autostop = 'A';
+    autostop = 'a';
   }
 
   if(digitalRead(deadman_switch)==HIGH)   // deadman released
@@ -122,15 +131,15 @@ void switch_states()    // Reads switches and sets output variables
   {
      if(digitalRead(drive_switch_1)==LOW)  // forward
     {
-      drive = 'F';
+      drive == 'F';
     }
     else if(digitalRead(drive_switch_2)==LOW)  // forward
     {
-      drive = 'R';
+      drive == 'R';
     }
     else    // neutral
     {
-      drive = 'N';
+      drive == 'N';
     }
   }
 }
@@ -181,7 +190,6 @@ void lcd_update()
   lcd.print(actual_speed_kmph,1);
   
   desired_speed_kmph = desired_speed / 10.0;
-  //desired_speed_kmph = setpoint / 10.0;
   lcd.setCursor(10,1);
   lcd.print("    ");
   lcd.setCursor(10,1);
@@ -220,7 +228,7 @@ void lcd_update()
   }
 
   pwm_percent = map(pwm,0,255,0,100);
-  lcd.setCursor(15,3);
+  lcd.setCursor(16,3);
   lcd.print("   ");
   lcd.setCursor(15,3);
   lcd.print(pwm_percent);

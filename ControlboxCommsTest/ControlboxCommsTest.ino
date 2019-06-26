@@ -19,7 +19,7 @@ void setup()
 void loop() 
 {
   loop_start_time = millis();
-  desired_speed = 150;
+  desired_speed = 127;
   Serial.print(',');
   Serial.print(char(desired_speed));
   Serial.print('H');

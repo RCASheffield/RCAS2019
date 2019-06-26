@@ -8,13 +8,13 @@
 #define H1B 8
 #define H2A 5
 #define H2B 7
-#define pwm_pin 3
+#define pwm_pin 3o
 #define horn_pin  4
 
 // Analog Input Pin Definitions
 #define battery_voltage_pin 2
 
-// #define autostop_pin  13  // IR sensor    // THIS PIN NEEDS CONNECTING TO/SWAPPING FOR PIN 19 FOR INTERRUPT TO WORK
+#define autostop_pin  13  // IR sensor    // THIS PIN NEEDS CONNECTING TO/SWAPPING FOR PIN 19 FOR INTERRUPT TO WORK
 #define autostop_pin_interrupt  19
 // #define encoder_1a  25   // THIS PIN NEEDS CONNECTING TO/SWAPPING FOR PIN 18 FOR INTERRUPT TO WORK
 #define encoder_1a_interrupt  18
@@ -46,16 +46,17 @@ byte pwm = 0;
 unsigned int control_output = 0;
 byte error = 0;  
 long integral_error = 0;
-const float kp = 0.8;
-const float ki = 0.02;
+const float kp = 3;
+const float ki = 0.005;
 
 // Sent Variables
-byte actual_speed = 0;
+int actual_speed = 0;
+float actual_speed_kmph = 0;
 int battery_voltage = 48;
 
 // Loop and Timing Variables
-long loop_start_pulse_count;
-long loop_pulse_count;
+long loop_start_pulse_count = 0;
+long loop_pulse_count = 01;
 unsigned long loop_start_time = 0;
 const byte loop_period = 10;   // sets loop period and hence sample rate
 unsigned long time_last_comms_received = 0;
@@ -67,20 +68,25 @@ const int lcd_update_period = 1000;
 unsigned long bridge_low_time = 0;
 const int bridge_dead_time = 200;
 boolean bridge_switch_flag = 0;
+volatile unsigned long auto_start_pulse_count = 0;
 
 void setup()
 {
   pin_definitions();
   digitalWrite(safety_pin, HIGH); //Safety relay
-  Serial.begin(115200);   // Must match controller arduino
+  pinMode(autostop_pin_interrupt, INPUT);
+  pinMode(autostop_pin, INPUT);
+  
+  Serial.begin(115200);   // M ust match controller arduino
   lcd.begin(16, 2);
   lcd.clear();
+  attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);
 }
 void loop()
 {
   loop_start_time = millis();
   loop_start_pulse_count = pulse_count;
-  actual_speed = 2.20893 * loop_pulse_count;  // constant = 0.2650872/(G*T) where G is the gear ratio between the encoder and the wheel and T is the loop period. Outputs speed such that 150 = 15km/h
+  actual_speed = 2.20893 * loop_pulse_count/2;  //the 2 is a bodge// constant = 0.2650872/(G*T) where G is the gear ratio between the encoder and the wheel and T is the loop period. Outputs speed such that 150 = 15km/h
 
   receive_comms();
   
@@ -97,12 +103,28 @@ void loop()
     desired_speed_kmph = desired_speed / 10.0;
     lcd.setCursor(3,0);
     lcd.print(desired_speed_kmph,1);
+
+    actual_speed_kmph = actual_speed / 10.0;
     lcd.print("    ");
+    lcd.setCursor(12,0);
+    lcd.print(actual_speed_kmph,1);
+    lcd.print("    ");
+    
   }
 
   change_outputs();
+
+//  if(autostop_flag == 1)
+//  {
+//    set_pwm(ref
+//  }
+//  else
+//  {
+    set_pwm(desired_speed);
+//  }
   
-  set_pwm();
+  //analogWrite(pwm_pin,pwm); 
+  analogWrite(pwm_pin,map(desired_speed,0,150,0,255)); 
   
   if (millis() - time_last_comms_sent > send_period)  // sends communications at fixed period
   {
@@ -273,45 +295,44 @@ void send_comms()
 
 void read_encoder1() // increments/decrements pulse count (position) depending on direction of rotation
 {
-  if (digitalRead(encoder_1b) == HIGH)
-  {
-    pulse_count++;
-  }
-  else
-  {
-    pulse_count--;
-  }
+  pulse_count++;
 }
 
 void autostop_ISR()
 {
-  pulse_count = 0;
+  auto_start_pulse_count = pulse_count;
   autostop_flag = 1;
+  lcd.setCursor(14,1);
+  lcd.print("EN");
   detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again
 }
 
-void set_pwm()
+void set_pwm(int requested)
 {
-  error = desired_speed - actual_speed;
+  error = requested - actual_speed;
+//  if(actual_speed == 0)
+//  {
+//    integral_error = 0;
+//  }
   control_output = kp * error + ki * integral_error;
-  if (control_output > 255)
-  {
-    integral_error = (255 - kp * error) / ki; // anti-windup measure
-    pwm = 255;
-    return;
-  }
-  else if (control_output < 0)
-  {
-    integral_error = (0 - kp * error) / ki; // anti-windup measure
-    pwm = 0;
-    return;
-  }
-  else
-  {
+//  if (control_output > 255)
+//  {
+//    integral_error = (255 - kp * error) / ki; // anti-windup measure
+//    pwm = 255;
+//    return;
+//  }
+//  else if (control_output < 0)
+//  {
+//    integral_error = (0 - kp * error) / ki; // anti-windup measure
+//    pwm = 0;
+//    return;
+//  }
+//  else
+//  {
     integral_error = integral_error + error;
     pwm = control_output;
     return;
-  }
+//  }
 }
 
 void pin_definitions()
