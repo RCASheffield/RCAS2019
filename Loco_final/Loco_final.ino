@@ -37,55 +37,61 @@ byte pwm = 0;
 
 void setup()
 {
-  pin_definitions();
-  digitalWrite(safety_pin, HIGH); //Safety relay
+  pin_definitions();    // sets pin modes
+  digitalWrite(safety_pin, HIGH); // Safety relay on to sustain power to all electronics
   Serial.begin(115200);   // Baud rate must match controller arduino
   lcd.begin(16, 2);
   lcd.clear();
-  attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);
+  attachInterrupt(digitalPinToInterrupt(encoder_1a_interrupt), read_encoder1, RISING);    // Creates inerrupt to read the rotary encoder
 }
 
 void loop()
 {
+  // Variables for calculating speed
   static unsigned long loop_start_pulse_count = 0;
   static unsigned long loop_pulse_count = 0;
+
+  // Loop timing variables
   static unsigned long loop_start_time = 0;
   static const unsigned long loop_period = 10;   // sets loop period
+
+  // Set control method
   static const boolean closed_loop_control = 1;   // change to 0 for open loop control
 
   loop_start_time = millis();
 
   loop_start_pulse_count = pulse_count;
   actual_speed =  1.104466 * loop_pulse_count; // constant = 0.8835729*(R/(G*T)) where R is the wheel radius (0.15m, don't be an idiot and use the diameter, like I did), G is the gear ratio between the encoder and the wheel, and T is the loop period. Outputs speed such that 150 = 15km/h.
-  receive_comms();
 
-  change_outputs();
+  receive_comms();    // checks for incoming comms, includes timeout if nothing received
+
+  change_outputs();   // changes relay states if necessary and resets variables. Includes relay dead time
 
   if (closed_loop_control == 1)
   {
-    if (autostop_flag == 1)
+    if (autostop_flag == 1)   // controls speed for autostop triggered mode
     {
-      set_pwm(auto_reference());
+      set_pwm(auto_reference());    // auto reference returns the speed setpoint based on distance travelled in autostop mode
     }
     else
     {
-      set_pwm(desired_speed);
+      set_pwm(desired_speed);   // sets pwm based on control box setpoint
     }
   }
   else
   {
-    analogWrite(pwm_pin,map(desired_speed,0,150,0,255));
+    analogWrite(pwm_pin, map(desired_speed, 0, 150, 0, 255)); // open loop control, maps and directly outputs desired speed
   }
 
   update_lcd();
 
-  send_comms();
+  send_comms();   // sends speed and pwm value to the control box
 
   while (millis() - loop_start_time < loop_period)  // fixes loop length
   {
   }
 
-  loop_pulse_count = pulse_count - loop_start_pulse_count;
+  loop_pulse_count = pulse_count - loop_start_pulse_count;    // for calculating speed in next loop iteration
 }
 
 void pin_definitions()
@@ -102,7 +108,7 @@ void pin_definitions()
   pinMode(13, INPUT);
 }
 
-void read_encoder1() // increments/decrements pulse count (position) depending on direction of rotation
+void read_encoder1()  // Interrupt service routine for counting encoder pulses
 {
   pulse_count++;
 }
@@ -114,11 +120,11 @@ void receive_comms()
 
   while (Serial.available() > 0)
   {
-    Serial.find(',');
-    while (Serial.available() < 4)
+    Serial.find(',');   // read until delimiter found. Prevents errors if initial messages do not line up
+    while (Serial.available() < 4)    // wait for full message
     {
     }
-    desired_speed = byte(Serial.read());
+    desired_speed = byte(Serial.read());    // desired speed is sent as a single 8-bit character - converted into a byte for use in the code
     horn = Serial.read();
     drive = Serial.read();
     autostop = Serial.read();
@@ -255,7 +261,7 @@ void change_outputs()
       case 'A':
         lcd.setCursor(1, 0);
         lcd.write("A");
-        attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop_ISR, RISING);
+        attachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt), autostop_ISR, FALLING);
         break;
 
       default:
@@ -276,13 +282,13 @@ void autostop_ISR()
   autostop_flag = 1;
   lcd.setCursor(14, 1);
   lcd.print("EN");
-  detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again
+  detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again (output generally flickers)
 }
 
 byte auto_reference()   // 81487 pulses = 25m travelled
 {
   static unsigned long auto_pulse_count = 0;
-  static byte auto_speed_setpoint = 100;
+  static byte auto_speed_setpoint = 100;    // loco should be going at above 10kmph before autostop entered
 
   auto_pulse_count = pulse_count - auto_start_pulse_count;
   if (auto_pulse_count < 81400)
@@ -299,60 +305,67 @@ byte auto_reference()   // 81487 pulses = 25m travelled
 
 void set_pwm(int requested)
 {
+  // Timing variables
   static int pwm_update_period = 50;
   static unsigned long last_pwm_update = 0;
+
+  // Control calculation variables
   static int control_output = 0;
   static int error = 0;
   static long integral_error = 0;
   static long new_integral_error = 0;
   static boolean windup_flag = 1;
-  static const float kp = 3;
-  static const float ki = 0.005 * pwm_update_period / 1000;
 
-  if (millis() - last_pwm_update > pwm_update_period)
+  // Gains - need tuning.
+  static const float kp = 3;    // higher gain: faster response, lower steady state offset (if ki = 0), more likely to wheelslip
+  static const float ki = 0.005 * pwm_update_period / 1000;   // increase gain to remove offset faster, but may induce oscillations. Should be several orders of magnitude lower than kp.
+
+  if (millis() - last_pwm_update > pwm_update_period)   // fixes pwm update period
   {
-    error = requested - actual_speed;
-    
-    if(actual_speed == 0)
+    if (drive == 'F' || drive == 'R')   // only outputs value if in forwards or reverse drive mode
     {
-      integral_error = 0;
-    }
-    new_integral_error = integral_error + error;
-    
-    control_output = kp * error + ki * new_integral_error;    // calculation of control output
+      error = requested - actual_speed;
+      new_integral_error = integral_error + error;
 
-    // Anti Windup Measures
-    windup_flag = 1;
-    if (control_output > 255)
-    {
-      pwm = 255;
-      if (error > 0)
+      control_output = kp * error + ki * new_integral_error;    // calculation of control output
+
+      // Anti Windup Measures
+      windup_flag = 1;
+      if (control_output > 255)
       {
-        windup_flag = 0;
+        pwm = 255;
+        if (error > 0)
+        {
+          windup_flag = 0;
+        }
+      }
+      else if (control_output < 0)
+      {
+        pwm = 0;
+        if (error < 0)
+        {
+          windup_flag = 0;
+        }
+      }
+      else
+      {
+        pwm = control_output;
+      }
+      if (windup_flag == 1)   // only changes integrator when not wound up
+      {
+        integral_error = new_integral_error;
       }
     }
-    else if (control_output < 0)
+    else (drive == 'S' || drive == 'N';)    // if drive is stopped or neutral, make output 0
     {
+      integral_error = 0;   // resets integral error to prevent it being non-zero when switched back into forwards or reverse
       pwm = 0;
-      if (error < 0)
-      {
-        windup_flag = 0;
-      }
     }
-    else
-    {
-      pwm = control_output;
-    }
-    if (windup_flag == 1)   // only changes integrator when not wound up
-    {
-      integral_error = new_integral_error;
-    }
-
-    analogWrite(pwm_pin, pwm);
+    analogWrite(pwm_pin, pwm);    // outputs calculated pwm value
   }
 }
 
-void update_lcd()
+void update_lcd()   // prints out some information
 {
   static unsigned long lcd_update_time = 0;
   static const unsigned long lcd_update_period = 1000;
