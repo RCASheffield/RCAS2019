@@ -29,7 +29,7 @@ char autostop = 'a';
 // Interrupt Variables
 volatile boolean autostop_flag = 0;
 volatile unsigned long auto_start_pulse_count = 0;
-volatile long pulse_count = 0;
+volatile unsigned long pulse_count = 0;
 
 // Sent Variables
 int actual_speed = 0;
@@ -47,35 +47,35 @@ void setup()
 
 void loop()
 {
-  unsigned long loop_start_pulse_count = 0;
+  static unsigned long loop_start_pulse_count = 0;
   static unsigned long loop_pulse_count = 0;
   static unsigned long loop_start_time = 0;
   static const unsigned long loop_period = 10;   // sets loop period
+  static const boolean closed_loop_control = 1;   // change to 0 for open loop control
 
   loop_start_time = millis();
 
   loop_start_pulse_count = pulse_count;
-  actual_speed = 2.20893 * loop_pulse_count / 2; //the 2 is a bodge// constant = 0.2650872/(G*T) where G is the gear ratio between the encoder and the wheel and T is the loop period. Outputs speed such that 150 = 15km/h
-
+  actual_speed =  1.104466 * loop_pulse_count; // constant = 0.8835729*(R/(G*T)) where R is the wheel radius (0.15m, don't be an idiot and use the diameter, like I did), G is the gear ratio between the encoder and the wheel, and T is the loop period. Outputs speed such that 150 = 15km/h.
   receive_comms();
 
   change_outputs();
 
-  // UNCOMMENT THE FOLLOWING BLOCK FOR CLOSED LOOP CONTROL
-  if (autostop_flag == 1)
+  if (closed_loop_control == 1)
   {
-    static byte ref = 0;
-
-    ref = auto_reference();
-    set_pwm(ref);
+    if (autostop_flag == 1)
+    {
+      set_pwm(auto_reference());
+    }
+    else
+    {
+      set_pwm(desired_speed);
+    }
   }
   else
   {
-    set_pwm(desired_speed);
+    analogWrite(pwm_pin,map(desired_speed,0,150,0,255));
   }
-
-  // UNCOMMENT THE FOLLOWING LINE FOR OPEN LOOP CONTROL:
-  // analogWrite(pwm_pin,map(desired_speed,0,150,0,255));
 
   update_lcd();
 
@@ -279,10 +279,22 @@ void autostop_ISR()
   detachInterrupt(digitalPinToInterrupt(autostop_pin_interrupt));   // Prevents autostop triggering again
 }
 
-byte auto_reference()
+byte auto_reference()   // 81487 pulses = 25m travelled
 {
-  // NEEDS CODING!!!
-  return 0;
+  static unsigned long auto_pulse_count = 0;
+  static byte auto_speed_setpoint = 100;
+
+  auto_pulse_count = pulse_count - auto_start_pulse_count;
+  if (auto_pulse_count < 81400)
+  {
+    auto_speed_setpoint = 100 - auto_pulse_count / 814;
+  }
+  else
+  {
+    auto_speed_setpoint = 0;
+    digitalWrite(brakes_pin, LOW);
+  }
+  return auto_speed_setpoint;
 }
 
 void set_pwm(int requested)
@@ -300,8 +312,14 @@ void set_pwm(int requested)
   if (millis() - last_pwm_update > pwm_update_period)
   {
     error = requested - actual_speed;
+    
+    if(actual_speed == 0)
+    {
+      integral_error = 0;
+    }
     new_integral_error = integral_error + error;
-    control_output = kp * error + ki * new_integral_error;
+    
+    control_output = kp * error + ki * new_integral_error;    // calculation of control output
 
     // Anti Windup Measures
     windup_flag = 1;
@@ -325,7 +343,7 @@ void set_pwm(int requested)
     {
       pwm = control_output;
     }
-    if (windup_flag == 1)   // only increases integrator when not wound up
+    if (windup_flag == 1)   // only changes integrator when not wound up
     {
       integral_error = new_integral_error;
     }
